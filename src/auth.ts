@@ -1,0 +1,40 @@
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import NextAuth from "next-auth";
+import Credentials from "next-auth/providers/credentials";
+import { authConfig } from "@/auth.config";
+import { prisma } from "@/lib/prisma";
+import { verifyPassword } from "@/lib/passwords";
+import { loginSchema } from "@/lib/validators";
+
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    Credentials({
+      name: "Email",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      authorize: async (credentials) => {
+        const parsed = loginSchema.safeParse(credentials);
+        if (!parsed.success) return null;
+
+        const user = await prisma.user.findUnique({
+          where: { email: parsed.data.email },
+        });
+        if (!user) return null;
+
+        const matches = await verifyPassword(parsed.data.password, user.passwordHash);
+        if (!matches) return null;
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        };
+      },
+    }),
+  ],
+});
